@@ -1,6 +1,7 @@
 "use server";
 
 import { connectToDatabase } from "@/database/mongoose";
+import mongoose from "mongoose";
 import { CreateBook, IBook, TextSegment } from "@/types";
 import { generateSlug } from "../utils";
 import Book from "@/database/models/book.model";
@@ -44,7 +45,7 @@ export const checkBookExists = async (title: string) => {
 
     return {
       exists: false,
-      error,
+      error: "Internal server error",
     };
   }
 };
@@ -102,6 +103,8 @@ export const getBookUploadEligibility = async (title: string) => {
 };
 
 export const createBook = async (data: CreateBook) => {
+  let session: mongoose.ClientSession | null = null;
+
   try {
     const { userId } = await auth();
 
@@ -112,52 +115,113 @@ export const createBook = async (data: CreateBook) => {
       };
     }
 
-    await connectToDatabase();
+    const db = await connectToDatabase();
 
     const slug = generateSlug(data.title);
-
-    const existingBook = await Book.findOne({ slug, clerkId: userId }).lean();
-
-    if (existingBook) {
-      return {
-        success: true,
-        data: JSON.parse(JSON.stringify(existingBook)),
-        alreadyExists: true,
-      };
-    }
-
     const { plan, limits } = await getUserPlanContext();
-    const currentBookCount = await Book.countDocuments({ clerkId: userId });
+    session = await db.startSession();
 
-    if (currentBookCount >= limits.maxBooks) {
-      return {
-        success: false,
-        limitReached: true,
-        plan,
-        error: `Your ${limits.name} plan allows up to ${limits.maxBooks} book${limits.maxBooks === 1 ? "" : "s"}. Upgrade to add more.`,
+    let result:
+      | {
+          success: true;
+          data: IBook;
+          alreadyExists?: boolean;
+        }
+      | {
+          success: false;
+          limitReached?: boolean;
+          plan?: typeof plan;
+          error: string;
+        } = {
+      success: false,
+      error: "Failed to create book",
+    };
+
+    await session.withTransaction(async () => {
+      const existingBook = await Book.findOne({ slug, clerkId: userId })
+        .session(session)
+        .lean();
+
+      if (existingBook) {
+        result = {
+          success: true,
+          data: JSON.parse(JSON.stringify(existingBook)) as IBook,
+          alreadyExists: true,
+        };
+        return;
+      }
+
+      const currentBookCount = await Book.countDocuments({ clerkId: userId }).session(
+        session,
+      );
+
+      if (currentBookCount >= limits.maxBooks) {
+        result = {
+          success: false,
+          limitReached: true,
+          plan,
+          error: `Your ${limits.name} plan allows up to ${limits.maxBooks} book${limits.maxBooks === 1 ? "" : "s"}. Upgrade to add more.`,
+        };
+        return;
+      }
+
+      const [book] = await Book.create(
+        [
+          {
+            ...data,
+            clerkId: userId,
+            slug,
+            totalSegments: 0,
+          },
+        ],
+        { session },
+      );
+
+      result = {
+        success: true,
+        data: JSON.parse(JSON.stringify(book)) as IBook,
       };
-    }
-
-    const book = await Book.create({
-      ...data,
-      clerkId: userId,
-      slug,
-      totalSegments: 0,
     });
+
+    if (!result.success) {
+      return result;
+    }
 
     revalidatePath("/");
 
-    return {
-      success: true,
-      data: JSON.parse(JSON.stringify(book)),
-    };
+    return result;
   } catch (error) {
+    if (
+      error instanceof Error
+      && "code" in error
+      && error.code === 11000
+    ) {
+      const { userId } = await auth();
+
+      if (userId) {
+        const slug = generateSlug(data.title);
+        const existingBook = await Book.findOne({ slug, clerkId: userId }).lean();
+
+        if (existingBook) {
+          return {
+            success: true,
+            data: JSON.parse(JSON.stringify(existingBook)),
+            alreadyExists: true,
+          };
+        }
+      }
+    }
+
     console.error("Error creating a book", error);
 
     return {
       success: false,
-      error,
+      error: "Internal server error",
     };
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
   }
 };
 
@@ -227,7 +291,7 @@ export const saveBookSegments = async (
 
     return {
       success: false,
-      error,
+      error: "Internal server error",
     };
   }
 };
@@ -398,14 +462,24 @@ export const searchBookSegments = async (
   limit: number = 3,
 ) => {
   try {
+    const trimmedQuery = query?.trim() || "";
+    if (!trimmedQuery) {
+      return {
+        success: true,
+        data: [],
+      };
+    }
+
+    const safeLimit = Math.min(Math.max(1, limit), 10);
+
     await connectToDatabase();
 
     const segments = await BookSegment.find(
-      { bookId, $text: { $search: query } },
+      { bookId, $text: { $search: trimmedQuery } },
       { content: 1, _id: 0, score: { $meta: "textScore" } },
     )
       .sort({ score: { $meta: "textScore" } })
-      .limit(limit)
+      .limit(safeLimit)
       .lean();
 
     return {

@@ -82,6 +82,12 @@ export const startVoiceSession = async (bookId: string): Promise<StartSessionRes
         const book = await Book.findOne({ _id: bookId, clerkId });
 
         if (!book) {
+            if (didReserveSession && clerkId && billingPeriodStart) {
+                await VoiceSessionReservation.findOneAndUpdate(
+                    { clerkId, billingPeriodStart, reservationCount: { $gt: 0 } },
+                    { $inc: { reservationCount: -1 } },
+                );
+            }
             return {
                 success: false,
                 error: "Book not found or unauthorized",
