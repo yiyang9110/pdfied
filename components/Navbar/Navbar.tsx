@@ -26,6 +26,19 @@ const Navbar = () => {
             const isActive =
               pathName === href || (href !== "/" && pathName.startsWith(href));
 
+            if (label === "Add New" && !user) {
+              return (
+                <SignInButton key={label} mode="modal">
+                  <button
+                    type="button"
+                    className="nav-link-base text-black hover:opacity-70"
+                  >
+                    {label}
+                  </button>
+                </SignInButton>
+              );
+            }
+
             return (
               <Link
                 href={href}

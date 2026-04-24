@@ -1,3 +1,5 @@
+import { SignInButton } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 
 const STEPS = [
@@ -262,7 +264,9 @@ function BooksIllustration() {
   );
 }
 
-export function LibraryHero() {
+export async function LibraryHero() {
+  const { userId } = await auth();
+
   return (
     <section className="library-hero-card mb-18">
       <div className="library-hero-content">
@@ -277,10 +281,19 @@ export function LibraryHero() {
           <div className="library-hero-illustration">
             <BooksIllustration />
           </div>
-          <Link href="/new-book" className="library-cta-primary">
-            <span>+</span>
-            Add new book
-          </Link>
+          {userId ? (
+            <Link href="/books/new" className="library-cta-primary">
+              <span>+</span>
+              Add new book
+            </Link>
+          ) : (
+            <SignInButton mode="modal">
+              <button type="button" className="library-cta-primary">
+                <span>+</span>
+                Add new book
+              </button>
+            </SignInButton>
+          )}
         </div>
 
         {/* Center: illustration (desktop only) */}
