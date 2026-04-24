@@ -1,7 +1,7 @@
 "use server";
 
 import { connectToDatabase } from "@/database/mongoose";
-import { CreateBook, TextSegment } from "@/types";
+import { CreateBook, IBook, TextSegment } from "@/types";
 import { generateSlug } from "../utils";
 import Book from "@/database/models/book.model";
 import BookSegment from "@/database/models/book-segment.model";
@@ -93,6 +93,27 @@ export const saveBookSegments = async (bookId: string, clerkId: string, segments
 
     await BookSegment.deleteMany({ book: bookId });
     await Book.findByIdAndDelete(bookId);
+
+    return {
+      success: false,
+      error,
+    }
+  }
+}
+
+export const getAllBooks = async () => {
+  try {
+    await connectToDatabase();
+
+    const books = await Book.find().sort({ createdAt: -1 }).lean();
+
+    return {
+      success: true,
+      data: JSON.parse(JSON.stringify(books)) as IBook[],
+    }
+
+  } catch (error) {
+    console.error("Error getting all books", error);
 
     return {
       success: false,
