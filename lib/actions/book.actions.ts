@@ -117,7 +117,8 @@ export const getAllBooks = async () => {
 
     return {
       success: false,
-      error,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
     }
   }
 }
