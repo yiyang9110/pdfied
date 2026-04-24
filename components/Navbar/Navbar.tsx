@@ -3,11 +3,11 @@ import { cn } from "@/lib/utils";
 import { Show, SignInButton, UserButton, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import Image from "next/image";
 
 const navItems = [
-  { label: "Library", href: "/books" },
+  { label: "Library", href: "/" },
   { label: "Add New", href: "/books/new" },
+  { label: "Pricing", href: "/pricing" },
 ];
 
 const Navbar = () => {
@@ -45,7 +45,7 @@ const Navbar = () => {
             </Show>
             <Show when="signed-in">
               {user?.firstName && (
-                <Link href="/subscriptions" className="nav-user-name">
+                <Link href="/pricing" className="nav-user-name">
                   {user.firstName}
                 </Link>
               )}

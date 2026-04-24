@@ -1,9 +1,9 @@
-import { Document, Types } from "mongoose";
-import { ReactNode } from "react";
-import { Control, FieldPath, FieldValues } from "react-hook-form";
-import { LucideIcon } from "lucide-react";
-import z from "zod";
-import { UploadSchema } from "@/lib/zod";
+import { Document, Types } from 'mongoose';
+import { ReactNode } from 'react';
+import { Control, FieldPath, FieldValues } from 'react-hook-form';
+import { LucideIcon } from 'lucide-react';
+import z from 'zod';
+import { UploadSchema } from '@/lib/zod';
 
 // ============================================
 // DATABASE MODELS
@@ -49,6 +49,15 @@ export interface IVoiceSession extends Document {
   updatedAt: Date;
 }
 
+export interface IVoiceSessionReservation extends Document {
+  clerkId: string;
+  billingPeriodStart: Date;
+  reservationCount: number;
+  lastReservationToken?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ============================================
 // FORM & INPUT TYPES
 // ============================================
@@ -56,7 +65,6 @@ export interface IVoiceSession extends Document {
 export type BookUploadFormValues = z.infer<typeof UploadSchema>;
 
 export interface CreateBook {
-  clerkId: string;
   title: string;
   author: string;
   persona?: string;
@@ -115,4 +123,33 @@ export interface FileUploadFieldProps<T extends FieldValues> {
   icon: LucideIcon;
   placeholder: string;
   hint: string;
+}
+
+export interface StartSessionResult {
+  success: boolean;
+  sessionId?: string;
+  error?: string;
+  maxDurationMinutes?: number;
+  limitReached?: boolean;
+  plan?: PlanKey;
+};
+
+// ============================================
+// SUBSCRIPTION / BILLING
+// ============================================
+
+export type PlanKey = 'free' | 'standard' | 'pro';
+
+export interface PlanLimits {
+  key: PlanKey;
+  name: string;
+  maxBooks: number;
+  maxSessionsPerMonth: number;
+  maxSessionMinutes: number;
+  sessionHistory: boolean;
+}
+
+export interface UserPlanContext {
+  plan: PlanKey;
+  limits: PlanLimits;
 }

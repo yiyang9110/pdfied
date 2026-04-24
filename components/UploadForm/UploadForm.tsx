@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { file, z } from "zod";
+import { z } from "zod";
 import { Upload, ImageIcon, X } from "lucide-react";
 
 import {
@@ -27,11 +27,40 @@ import {
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import LoadingOverlay from "@/components/LoadingOverlay";
-import { useAuth, useUser } from "@clerk/nextjs";
-import { toast } from 'sonner';
-import { checkBookExists, createBook, saveBookSegments } from "@/lib/actions/book.actions";
+import { useAuth } from "@clerk/nextjs";
+import {
+  createBook,
+  getBookUploadEligibility,
+  saveBookSegments,
+} from "@/lib/actions/book.actions";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { upload } from '@vercel/blob/client';
+import { toast } from "sonner";
+import { upload } from "@vercel/blob/client";
+
+const renderLimitError = (message: string) => {
+  const upgradeIndex = message.indexOf("Upgrade");
+
+  if (upgradeIndex === -1) {
+    return <p>{message}</p>;
+  }
+
+  const beforeUpgrade = message.slice(0, upgradeIndex);
+  const afterUpgrade = message.slice(upgradeIndex + "Upgrade".length);
+
+  return (
+    <p>
+      {beforeUpgrade}
+      <Link
+        href="/pricing"
+        className="font-semibold underline underline-offset-4 transition hover:text-red-900"
+      >
+        Upgrade
+      </Link>
+      {afterUpgrade}
+    </p>
+  );
+};
 
 type VoiceKey = keyof typeof voiceOptions;
 
@@ -72,6 +101,7 @@ const UploadForm = () => {
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [limitError, setLimitError] = useState<string | null>(null);
   const router = useRouter();
 
   const form = useForm<FormValues>({
@@ -88,19 +118,33 @@ const UploadForm = () => {
     if (!userId) {
       toast.error("Please sign in to upload a book");
       return;
-    };
+    }
     setIsSubmitting(true);
+    setLimitError(null);
     try {
-      const existsCheck = await checkBookExists(values.title);
+      const eligibility = await getBookUploadEligibility(values.title);
 
-      if (existsCheck.exists && existsCheck.book) {
+      if (!eligibility.success) {
+        throw new Error(
+          typeof eligibility.error === "string"
+            ? eligibility.error
+            : "Failed to validate upload",
+        );
+      }
+
+      if (eligibility.alreadyExists && eligibility.book) {
         toast.info("Book already exists");
-        form.reset()
-        router.push(`/book/${existsCheck.book.slug}`);
+        form.reset();
+        router.push(`/books/${eligibility.book.slug}`);
         return;
       }
 
-      const fileTitle = values.title.replace(/\s+/g, '-').toLowerCase();
+      if (eligibility.limitReached) {
+        setLimitError(eligibility.error ?? "Book limit reached");
+        return;
+      }
+
+      const fileTitle = values.title.replace(/\s+/g, "-").toLowerCase();
 
       const pdfFile = values.pdf;
 
@@ -112,68 +156,77 @@ const UploadForm = () => {
       }
 
       const uploadedPdfBlob = await upload(fileTitle, pdfFile, {
-        access: 'public',
-        handleUploadUrl: '/api/upload',
+        access: "public",
+        handleUploadUrl: "/api/upload",
         contentType: ACCEPTED_PDF_TYPES.join(","),
-      })
+      });
 
       let coverURL: string;
+      let coverBlobKey: string | undefined;
 
       if (values.cover) {
         const coverFileName = `${fileTitle}_cover.png`;
         const uploadedCoverBlob = await upload(coverFileName, values.cover, {
-          access: 'public',
-          handleUploadUrl: '/api/upload',
+          access: "public",
+          handleUploadUrl: "/api/upload",
           contentType: values.cover.type,
-        })
+        });
 
         coverURL = uploadedCoverBlob.url;
+        coverBlobKey = uploadedCoverBlob.pathname;
       } else {
         const response = await fetch(parsedPDF.cover);
         const coverBlob = await response.blob();
         const coverFileName = `${fileTitle}_cover.png`;
         const uploadedCoverBlob = await upload(coverFileName, coverBlob, {
-          access: 'public',
-          handleUploadUrl: '/api/upload',
-          contentType: 'image/png',
-        })
+          access: "public",
+          handleUploadUrl: "/api/upload",
+          contentType: "image/png",
+        });
 
         coverURL = uploadedCoverBlob.url;
+        coverBlobKey = uploadedCoverBlob.pathname;
       }
 
       const book = await createBook({
-        clerkId: userId,
         title: values.title,
         author: values.author,
         persona: values.voice,
         fileURL: uploadedPdfBlob.url,
         fileBlobKey: uploadedPdfBlob.pathname,
         coverURL,
-        fileSize: pdfFile.size
-      })
+        coverBlobKey,
+        fileSize: pdfFile.size,
+      });
 
       if (!book.success) {
-        throw new Error('failes')
+        if (book.limitReached) {
+          setLimitError(book.error ?? "Book limit reached");
+          return;
+        }
+        throw new Error(typeof book.error === "string" ? book.error : "Failed to create book");
       }
 
       if (book.alreadyExists) {
         toast.info("Book already exists");
-        form.reset()
-        router.push(`/book/${existsCheck.book.slug}`);
+        form.reset();
+        router.push(`/books/${book.data.slug}`);
         return;
       }
 
-      const segments = await saveBookSegments(book.data._id, userId, parsedPDF.content);
+      const segments = await saveBookSegments(
+        book.data._id,
+        parsedPDF.content,
+      );
 
       if (!segments.success) {
-        toast.error('Failed to save book segments');
-        throw new Error("Failed to save book")
+        toast.error("Failed to save book segments");
+        throw new Error("Failed to save book");
       }
 
-      toast.success('Book uploaded successfully');
+      toast.success("Book uploaded successfully");
       form.reset();
-      router.push(`/book/${book.data.slug}`);
-
+      router.push(`/books/${book.data.slug}`);
     } catch (error) {
       console.error(error);
       toast.error("Failed to upload book");
@@ -184,6 +237,20 @@ const UploadForm = () => {
 
   return (
     <div className="new-book-wrapper">
+      {limitError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-soft-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-2">{renderLimitError(limitError)}</div>
+            <button
+              type="button"
+              onClick={() => setLimitError(null)}
+              className="shrink-0 text-red-500 transition hover:text-red-700"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit(onSubmit)}
