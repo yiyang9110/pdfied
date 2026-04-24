@@ -121,4 +121,23 @@ export const getAllBooks = async () => {
     }
     }
   }
+export const getAllBooks = async () => {
+  try {
+    await connectToDatabase();
+
+    const books = await Book.find().sort({ createdAt: -1 }).lean();
+
+    return {
+      success: true,
+      data: JSON.parse(JSON.stringify(books)) as IBook[],
+    }
+
+  } catch (error) {
+    console.error("Error getting all books", error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
+  }
 }
