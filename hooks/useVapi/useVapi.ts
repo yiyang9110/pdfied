@@ -147,7 +147,7 @@ const useVapi = (book: IBook) => {
         setStatus('connecting');
 
         try {
-            const result = await startVoiceSession(userId, book._id);
+            const result = await startVoiceSession(book._id);
             if (!result.success) {
                 setLimitError(result.error || 'Failed to start session');
                 setStatus('idle');

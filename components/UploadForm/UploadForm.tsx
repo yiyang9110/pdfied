@@ -28,10 +28,14 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useAuth, useUser } from "@clerk/nextjs";
-import { toast } from 'sonner';
-import { checkBookExists, createBook, saveBookSegments } from "@/lib/actions/book.actions";
+import { toast } from "sonner";
+import {
+  checkBookExists,
+  createBook,
+  saveBookSegments,
+} from "@/lib/actions/book.actions";
 import { useRouter } from "next/navigation";
-import { upload } from '@vercel/blob/client';
+import { upload } from "@vercel/blob/client";
 
 type VoiceKey = keyof typeof voiceOptions;
 
@@ -88,19 +92,19 @@ const UploadForm = () => {
     if (!userId) {
       toast.error("Please sign in to upload a book");
       return;
-    };
+    }
     setIsSubmitting(true);
     try {
       const existsCheck = await checkBookExists(values.title);
 
       if (existsCheck.exists && existsCheck.book) {
         toast.info("Book already exists");
-        form.reset()
+        form.reset();
         router.push(`/books/${existsCheck.book.slug}`);
         return;
       }
 
-      const fileTitle = values.title.replace(/\s+/g, '-').toLowerCase();
+      const fileTitle = values.title.replace(/\s+/g, "-").toLowerCase();
 
       const pdfFile = values.pdf;
 
@@ -112,20 +116,20 @@ const UploadForm = () => {
       }
 
       const uploadedPdfBlob = await upload(fileTitle, pdfFile, {
-        access: 'public',
-        handleUploadUrl: '/api/upload',
+        access: "public",
+        handleUploadUrl: "/api/upload",
         contentType: ACCEPTED_PDF_TYPES.join(","),
-      })
+      });
 
       let coverURL: string;
 
       if (values.cover) {
         const coverFileName = `${fileTitle}_cover.png`;
         const uploadedCoverBlob = await upload(coverFileName, values.cover, {
-          access: 'public',
-          handleUploadUrl: '/api/upload',
+          access: "public",
+          handleUploadUrl: "/api/upload",
           contentType: values.cover.type,
-        })
+        });
 
         coverURL = uploadedCoverBlob.url;
       } else {
@@ -133,47 +137,48 @@ const UploadForm = () => {
         const coverBlob = await response.blob();
         const coverFileName = `${fileTitle}_cover.png`;
         const uploadedCoverBlob = await upload(coverFileName, coverBlob, {
-          access: 'public',
-          handleUploadUrl: '/api/upload',
-          contentType: 'image/png',
-        })
+          access: "public",
+          handleUploadUrl: "/api/upload",
+          contentType: "image/png",
+        });
 
         coverURL = uploadedCoverBlob.url;
       }
 
       const book = await createBook({
-        clerkId: userId,
         title: values.title,
         author: values.author,
         persona: values.voice,
         fileURL: uploadedPdfBlob.url,
         fileBlobKey: uploadedPdfBlob.pathname,
         coverURL,
-        fileSize: pdfFile.size
-      })
+        fileSize: pdfFile.size,
+      });
 
       if (!book.success) {
-        throw new Error('failes')
+        throw new Error("failes");
       }
 
       if (book.alreadyExists) {
         toast.info("Book already exists");
-        form.reset()
+        form.reset();
         router.push(`/books/${existsCheck.book.slug}`);
         return;
       }
 
-      const segments = await saveBookSegments(book.data._id, userId, parsedPDF.content);
+      const segments = await saveBookSegments(
+        book.data._id,
+        parsedPDF.content,
+      );
 
       if (!segments.success) {
-        toast.error('Failed to save book segments');
-        throw new Error("Failed to save book")
+        toast.error("Failed to save book segments");
+        throw new Error("Failed to save book");
       }
 
-      toast.success('Book uploaded successfully');
+      toast.success("Book uploaded successfully");
       form.reset();
       router.push(`/books/${book.data.slug}`);
-
     } catch (error) {
       console.error(error);
       toast.error("Failed to upload book");

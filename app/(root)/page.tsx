@@ -5,6 +5,8 @@ import { auth } from "@clerk/nextjs/server";
 import { SignInButton } from "@clerk/nextjs";
 import { Lock } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 const Page = async () => {
   const { userId } = await auth();
 
@@ -21,7 +23,8 @@ const Page = async () => {
               Your Library is Locked
             </h2>
             <p className="text-[var(--text-secondary)] text-lg mb-8 leading-relaxed">
-              Please sign in to view your personal library and start chatting with your books.
+              Please sign in to view your personal library and start chatting
+              with your books.
             </p>
           </div>
         </main>

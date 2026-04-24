@@ -1,5 +1,11 @@
+import { timingSafeEqual } from "crypto";
 import { searchBookSegments } from "@/lib/actions/book.actions";
 import { NextResponse } from "next/server";
+
+const safeCompare = (a: string, b: string): boolean => {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+};
 
 export const POST = async (request: Request) => {
   try {
@@ -8,7 +14,8 @@ export const POST = async (request: Request) => {
       console.error("VAPI_WEBHOOK_SECRET is not configured");
       return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
     }
-    if (request.headers.get("x-vapi-secret") !== expectedSecret) {
+    const providedSecret = request.headers.get("x-vapi-secret") ?? "";
+    if (!safeCompare(providedSecret, expectedSecret)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

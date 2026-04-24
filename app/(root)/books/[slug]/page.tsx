@@ -1,11 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Mic, MicOff } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 import { getBookBySlug } from "@/lib/actions/book.actions";
-import { getVoice } from "@/lib/utils";
 import VapiControls from "@/components/VapiControls";
 
 interface PageProps {

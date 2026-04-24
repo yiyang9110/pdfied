@@ -4,17 +4,24 @@ import { connectToDatabase } from "@/database/mongoose";
 import { StartSessionResult } from '@/types'
 import { getCurrentBillingPeriodStart } from "../subscription-constants";
 import VoiceSession from "@/database/models/voice-session.model";
+import { auth } from "@clerk/nextjs/server";
 
 
 
-export const startVoiceSession = async (clerkId: string, bookId: string): Promise<StartSessionResult> => {
+export const startVoiceSession = async (bookId: string): Promise<StartSessionResult> => {
     try {
+        const { userId } = await auth();
+
+        if (!userId) {
+            return { success: false, error: "Unauthorized" };
+        }
+
         await connectToDatabase();
 
 
         //litmits/plan
 
-        const session = await VoiceSession.create({ clerkId, bookId, startedAt: new Date(), billingPeriodStart: getCurrentBillingPeriodStart(), durationSeconds: 0 })
+        const session = await VoiceSession.create({ clerkId: userId, bookId, startedAt: new Date(), billingPeriodStart: getCurrentBillingPeriodStart(), durationSeconds: 0 })
 
         return {
             success: true,
@@ -33,10 +40,16 @@ export const startVoiceSession = async (clerkId: string, bookId: string): Promis
 
 export const endVoiceSession = async (sessionId: string, durationSeconds: number) => {
     try {
+        const { userId } = await auth();
+
+        if (!userId) {
+            return { success: false, error: "Unauthorized" };
+        }
+
         await connectToDatabase();
 
-        const session = await VoiceSession.findByIdAndUpdate(
-            sessionId,
+        const session = await VoiceSession.findOneAndUpdate(
+            { _id: sessionId, clerkId: userId },
             {
                 endedAt: new Date(),
                 durationSeconds,
