@@ -96,7 +96,7 @@ const UploadForm = () => {
       if (existsCheck.exists && existsCheck.book) {
         toast.info("Book already exists");
         form.reset()
-        router.push(`/book/${existsCheck.book.slug}`);
+        router.push(`/books/${existsCheck.book.slug}`);
         return;
       }
 
@@ -159,7 +159,7 @@ const UploadForm = () => {
       if (book.alreadyExists) {
         toast.info("Book already exists");
         form.reset()
-        router.push(`/book/${existsCheck.book.slug}`);
+        router.push(`/books/${existsCheck.book.slug}`);
         return;
       }
 
@@ -172,7 +172,7 @@ const UploadForm = () => {
 
       toast.success('Book uploaded successfully');
       form.reset();
-      router.push(`/book/${book.data.slug}`);
+      router.push(`/books/${book.data.slug}`);
 
     } catch (error) {
       console.error(error);

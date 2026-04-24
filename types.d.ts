@@ -1,9 +1,9 @@
-import { Document, Types } from "mongoose";
-import { ReactNode } from "react";
-import { Control, FieldPath, FieldValues } from "react-hook-form";
-import { LucideIcon } from "lucide-react";
-import z from "zod";
-import { UploadSchema } from "@/lib/zod";
+import { Document, Types } from 'mongoose';
+import { ReactNode } from 'react';
+import { Control, FieldPath, FieldValues } from 'react-hook-form';
+import { LucideIcon } from 'lucide-react';
+import z from 'zod';
+import { UploadSchema } from '@/lib/zod';
 
 // ============================================
 // DATABASE MODELS
@@ -116,3 +116,9 @@ export interface FileUploadFieldProps<T extends FieldValues> {
   placeholder: string;
   hint: string;
 }
+
+export interface StartSessionResult {
+  success: boolean;
+  sessionId?: string;
+  error?: string;
+};

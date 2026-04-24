@@ -5,6 +5,7 @@ import { CreateBook, IBook, TextSegment } from "@/types";
 import { generateSlug } from "../utils";
 import Book from "@/database/models/book.model";
 import BookSegment from "@/database/models/book-segment.model";
+import { auth } from "@clerk/nextjs/server";
 
 export const checkBookExists = async (title: string) => {
   try {
@@ -103,9 +104,18 @@ export const saveBookSegments = async (bookId: string, clerkId: string, segments
 
 export const getAllBooks = async () => {
   try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return {
+        success: false,
+        error: "Unauthorized",
+      }
+    }
+
     await connectToDatabase();
 
-    const books = await Book.find().sort({ createdAt: -1 }).lean();
+    const books = await Book.find({ clerkId: userId }).sort({ createdAt: -1 }).lean();
 
     return {
       success: true,
@@ -121,3 +131,71 @@ export const getAllBooks = async () => {
     }
   }
 }
+
+export const getBookBySlug = async (slug: string) => {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return {
+        success: false,
+        error: "Unauthorized",
+      };
+    }
+
+    await connectToDatabase();
+
+    const book = await Book.findOne({ slug, clerkId: userId }).lean();
+
+    if (!book) {
+      return {
+        success: false,
+        error: "Book not found",
+      };
+    }
+
+    return {
+      success: true,
+      data: JSON.parse(JSON.stringify(book)) as IBook,
+    };
+  } catch (error) {
+    console.error("Error getting book by slug", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+};
+
+// Trust boundary: no auth inside this function. Callers are responsible for
+// authorizing access to `bookId` — today the only caller is the Vapi webhook,
+// which verifies a shared secret before invoking this.
+export const searchBookSegments = async (
+  bookId: string,
+  query: string,
+  limit: number = 3
+) => {
+  try {
+    await connectToDatabase();
+
+    const segments = await BookSegment.find(
+      { bookId, $text: { $search: query } },
+      { score: { $meta: "textScore" } }
+    )
+      .sort({ score: { $meta: "textScore" } })
+      .limit(limit)
+      .lean();
+
+    return {
+      success: true,
+      data: segments,
+    };
+  } catch (error) {
+    console.error("Error searching book segments", error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+};
