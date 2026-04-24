@@ -1,4 +1,4 @@
-import { MAX_FILE_SIZE } from "@/lib/constants";
+import { ACCEPTED_IMAGE_TYPES, ACCEPTED_PDF_TYPES, MAX_FILE_SIZE } from "@/lib/constants";
 import { auth } from "@clerk/nextjs/server";
 import { handleUpload, HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
@@ -17,7 +17,7 @@ export const POST = async (request: Request): Promise<NextResponse> => {
                 }
 
                 return {
-                    allowedContentTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
+                    allowedContentTypes: [...ACCEPTED_PDF_TYPES, ...ACCEPTED_IMAGE_TYPES],
                     addRandomSuffix: true,
                     maximumFileSize: MAX_FILE_SIZE,
                     tokenPayload: JSON.stringify({
