@@ -112,6 +112,7 @@ export const createBook = async (data: CreateBook) => {
       return {
         success: false,
         error: "Unauthorized",
+        limitReached: false,
       };
     }
 
@@ -135,6 +136,7 @@ export const createBook = async (data: CreateBook) => {
         } = {
       success: false,
       error: "Failed to create book",
+      limitReached: false,
     };
 
     await session.withTransaction(async () => {
@@ -187,7 +189,7 @@ export const createBook = async (data: CreateBook) => {
       return result;
     }
 
-    revalidatePath("/");
+    revalidatePath("/", "layout");
 
     return result;
   } catch (error) {
@@ -217,6 +219,7 @@ export const createBook = async (data: CreateBook) => {
     return {
       success: false,
       error: "Internal server error",
+      limitReached: false,
     };
   } finally {
     if (session) {
@@ -403,7 +406,7 @@ export const deleteBook = async (bookId: string) => {
       }
     }
 
-    revalidatePath("/");
+    revalidatePath("/", "layout");
 
     return {
       success: true,
