@@ -114,7 +114,7 @@ const UploadForm = () => {
       const uploadedPdfBlob = await upload(fileTitle, pdfFile, {
         access: 'public',
         handleUploadUrl: '/api/upload',
-        contentType: 'application/pdf',
+        contentType: ACCEPTED_PDF_TYPES.join(","),
       })
 
       let coverURL: string;
@@ -275,7 +275,7 @@ const UploadForm = () => {
                     <input
                       ref={coverInputRef}
                       type="file"
-                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      accept={ACCEPTED_IMAGE_TYPES.join(",")}
                       className="hidden"
                       onChange={(e) => onChange(e.target.files?.[0])}
                     />
