@@ -120,4 +120,27 @@ export interface StartSessionResult {
   success: boolean;
   sessionId?: string;
   error?: string;
+  maxDurationMinutes?: number;
+  limitReached?: boolean;
+  plan?: PlanKey;
 };
+
+// ============================================
+// SUBSCRIPTION / BILLING
+// ============================================
+
+export type PlanKey = 'free' | 'standard' | 'pro';
+
+export interface PlanLimits {
+  key: PlanKey;
+  name: string;
+  maxBooks: number;
+  maxSessionsPerMonth: number;
+  maxSessionMinutes: number;
+  sessionHistory: boolean;
+}
+
+export interface UserPlanContext {
+  plan: PlanKey;
+  limits: PlanLimits;
+}

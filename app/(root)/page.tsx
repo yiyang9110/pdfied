@@ -1,13 +1,19 @@
 import { LibraryHero } from "@/components/LibraryHero";
+import LibrarySearch from "@/components/LibrarySearch/LibrarySearch";
 import BookCard from "@/components/BookCard";
-import { getAllBooks } from "@/lib/actions/book.actions";
+import { searchBooks } from "@/lib/actions/book.actions";
 import { auth } from "@clerk/nextjs/server";
-import { SignInButton } from "@clerk/nextjs";
 import { Lock } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-const Page = async () => {
+interface PageProps {
+  searchParams: Promise<{
+    q?: string;
+  }>;
+}
+
+const Page = async ({ searchParams }: PageProps) => {
   const { userId } = await auth();
 
   if (!userId) {
@@ -32,7 +38,9 @@ const Page = async () => {
     );
   }
 
-  const bookResults = await getAllBooks();
+  const { q = "" } = await searchParams;
+  const searchQuery = q.trim();
+  const bookResults = await searchBooks(searchQuery);
 
   if (!bookResults.success) {
     return (
@@ -55,11 +63,37 @@ const Page = async () => {
     <div className="flex flex-col min-h-screen">
       <main className="wrapper container">
         <LibraryHero />
+        <section className="mt-12 mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-[var(--text-primary)] font-serif">
+              Recent Books
+            </h2>
+            <p className="mt-2 text-[var(--text-secondary)]">
+              Search by title or author.
+            </p>
+          </div>
+
+          <LibrarySearch key={searchQuery} initialQuery={searchQuery} />
+        </section>
+
+        {books.length === 0 ? (
+          <div className="library-empty-card text-center shadow-soft-sm">
+            <h3 className="text-2xl font-semibold text-[var(--text-primary)] font-serif">
+              {searchQuery ? "No matching books found" : "No books yet"}
+            </h3>
+            <p className="mt-3 text-[var(--text-secondary)]">
+              {searchQuery
+                ? `No books matched "${searchQuery}" by title or author.`
+                : "Upload your first book to start your library."}
+            </p>
+          </div>
+        ) : (
         <div className="library-books-grid">
           {books.map((book) => {
             return (
               <BookCard
                 key={book._id}
+                id={book._id}
                 title={book.title}
                 author={book.author}
                 coverURL={book.coverURL}
@@ -68,6 +102,7 @@ const Page = async () => {
             );
           })}
         </div>
+        )}
       </main>
     </div>
   );

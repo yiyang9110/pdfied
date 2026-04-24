@@ -5,8 +5,13 @@ import { CreateBook, IBook, TextSegment } from "@/types";
 import { generateSlug } from "../utils";
 import Book from "@/database/models/book.model";
 import BookSegment from "@/database/models/book-segment.model";
+import { del } from "@vercel/blob";
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
+import { getUserPlanContext } from "../plan.server";
+
+const escapeRegex = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export const checkBookExists = async (title: string) => {
   try {
@@ -44,6 +49,58 @@ export const checkBookExists = async (title: string) => {
   }
 };
 
+export const getBookUploadEligibility = async (title: string) => {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return {
+        success: false,
+        error: "Unauthorized",
+      };
+    }
+
+    await connectToDatabase();
+
+    const slug = generateSlug(title);
+    const existingBook = await Book.findOne({ slug, clerkId: userId }).lean();
+
+    if (existingBook) {
+      return {
+        success: true,
+        canUpload: false,
+        alreadyExists: true,
+        book: JSON.parse(JSON.stringify(existingBook)) as IBook,
+      };
+    }
+
+    const { plan, limits } = await getUserPlanContext();
+    const currentBookCount = await Book.countDocuments({ clerkId: userId });
+
+    if (currentBookCount >= limits.maxBooks) {
+      return {
+        success: true,
+        canUpload: false,
+        limitReached: true,
+        plan,
+        error: `Your ${limits.name} plan allows up to ${limits.maxBooks} book${limits.maxBooks === 1 ? "" : "s"}. Upgrade to add more.`,
+      };
+    }
+
+    return {
+      success: true,
+      canUpload: true,
+    };
+  } catch (error) {
+    console.error("Error checking book upload eligibility", error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+};
+
 export const createBook = async (data: CreateBook) => {
   try {
     const { userId } = await auth();
@@ -66,6 +123,18 @@ export const createBook = async (data: CreateBook) => {
         success: true,
         data: JSON.parse(JSON.stringify(existingBook)),
         alreadyExists: true,
+      };
+    }
+
+    const { plan, limits } = await getUserPlanContext();
+    const currentBookCount = await Book.countDocuments({ clerkId: userId });
+
+    if (currentBookCount >= limits.maxBooks) {
+      return {
+        success: false,
+        limitReached: true,
+        plan,
+        error: `Your ${limits.name} plan allows up to ${limits.maxBooks} book${limits.maxBooks === 1 ? "" : "s"}. Upgrade to add more.`,
       };
     }
 
@@ -121,7 +190,19 @@ export const saveBookSegments = async (
 
     await BookSegment.insertMany(segmentsToInsert);
 
-    await Book.findByIdAndUpdate(bookId, { totalSegments: segments.length });
+    const updatedBook = await Book.findByIdAndUpdate(
+      { _id: bookId, clerkId: userId },
+      { totalSegments: segments.length },
+    );
+
+    if (!updatedBook) {
+      await BookSegment.deleteMany({ bookId, clerkId: userId });
+
+      return {
+        success: false,
+        error: "Book not found or unauthorized",
+      };
+    }
 
     return {
       success: true,
@@ -130,8 +211,19 @@ export const saveBookSegments = async (
   } catch (error) {
     console.error("Error saving book segments", error);
 
-    await BookSegment.deleteMany({ book: bookId });
-    await Book.findByIdAndDelete(bookId);
+    await BookSegment.deleteMany({ bookId, clerkId: userId });
+
+    const deletedBook = await Book.findOneAndDelete({
+      _id: bookId,
+      clerkId: userId,
+    });
+
+    if (!deletedBook) {
+      return {
+        success: false,
+        error: "Book not found or unauthorized",
+      };
+    }
 
     return {
       success: false,
@@ -163,6 +255,97 @@ export const getAllBooks = async () => {
     };
   } catch (error) {
     console.error("Error getting all books", error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+};
+
+export const searchBooks = async (query: string) => {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return {
+        success: false,
+        error: "Unauthorized",
+      };
+    }
+
+    await connectToDatabase();
+
+    const trimmedQuery = query.trim();
+    const filter = trimmedQuery
+      ? {
+          clerkId: userId,
+          $or: [
+            { title: { $regex: new RegExp(escapeRegex(trimmedQuery), "i") } },
+            { author: { $regex: new RegExp(escapeRegex(trimmedQuery), "i") } },
+          ],
+        }
+      : { clerkId: userId };
+
+    const books = await Book.find(filter).sort({ createdAt: -1 }).lean();
+
+    return {
+      success: true,
+      data: JSON.parse(JSON.stringify(books)) as IBook[],
+    };
+  } catch (error) {
+    console.error("Error searching books", error);
+
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+};
+
+export const deleteBook = async (bookId: string) => {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return {
+        success: false,
+        error: "Unauthorized",
+      };
+    }
+
+    await connectToDatabase();
+
+    const book = await Book.findOneAndDelete({ _id: bookId, clerkId: userId }).lean();
+
+    if (!book) {
+      return {
+        success: false,
+        error: "Book not found or unauthorized",
+      };
+    }
+
+    await BookSegment.deleteMany({ bookId, clerkId: userId });
+
+    const blobKeys = [book.fileBlobKey, book.coverBlobKey].filter(
+      (value): value is string => Boolean(value),
+    );
+
+    if (blobKeys.length > 0) {
+      try {
+        await del(blobKeys);
+      } catch (blobError) {
+        console.error("Error deleting book blobs", blobError);
+      }
+    }
+
+    revalidatePath("/");
+
+    return {
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error deleting book", error);
 
     return {
       success: false,
