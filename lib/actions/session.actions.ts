@@ -3,36 +3,73 @@
 import { connectToDatabase } from "@/database/mongoose";
 import { StartSessionResult } from '@/types'
 import {
-    getCurrentBillingPeriodEnd,
     getCurrentBillingPeriodStart,
 } from "../subscription-constants";
+import Book from "@/database/models/book.model";
 import VoiceSession from "@/database/models/voice-session.model";
+import VoiceSessionReservation from "@/database/models/voice-session-reservation.model";
 import { auth } from "@clerk/nextjs/server";
 import { getUserPlanContext } from "../plan.server";
 
 
 export const startVoiceSession = async (bookId: string): Promise<StartSessionResult> => {
+    let clerkId: string | null = null;
+    let billingPeriodStart: Date | null = null;
+    let didReserveSession = false;
+
     try {
         const { userId } = await auth();
+        clerkId = userId;
 
-        if (!userId) {
+        if (!clerkId) {
             return { success: false, error: "Unauthorized" };
         }
 
         await connectToDatabase();
 
         const { plan, limits } = await getUserPlanContext();
+        billingPeriodStart = getCurrentBillingPeriodStart();
 
         if (Number.isFinite(limits.maxSessionsPerMonth)) {
-            const periodStart = getCurrentBillingPeriodStart();
-            const periodEnd = getCurrentBillingPeriodEnd();
+            const reservationToken = crypto.randomUUID();
+            const reservation = await VoiceSessionReservation.findOneAndUpdate(
+                { clerkId, billingPeriodStart },
+                [
+                    {
+                        $set: {
+                            clerkId: { $ifNull: ["$clerkId", clerkId] },
+                            billingPeriodStart: {
+                                $ifNull: ["$billingPeriodStart", billingPeriodStart],
+                            },
+                            reservationCount: { $ifNull: ["$reservationCount", 0] },
+                        },
+                    },
+                    {
+                        $set: {
+                            reservationCount: {
+                                $cond: [
+                                    { $lt: ["$reservationCount", limits.maxSessionsPerMonth] },
+                                    { $add: ["$reservationCount", 1] },
+                                    "$reservationCount",
+                                ],
+                            },
+                            lastReservationToken: {
+                                $cond: [
+                                    { $lt: ["$reservationCount", limits.maxSessionsPerMonth] },
+                                    reservationToken,
+                                    "$lastReservationToken",
+                                ],
+                            },
+                        },
+                    },
+                ],
+                { new: true, upsert: true },
+            );
 
-            const sessionsThisMonth = await VoiceSession.countDocuments({
-                clerkId: userId,
-                startedAt: { $gte: periodStart, $lt: periodEnd },
-            });
+            didReserveSession =
+                reservation?.lastReservationToken === reservationToken;
 
-            if (sessionsThisMonth >= limits.maxSessionsPerMonth) {
+            if (!didReserveSession) {
                 return {
                     success: false,
                     error: `You've used all ${limits.maxSessionsPerMonth} voice sessions on the ${limits.name} plan this month. Upgrade for more.`,
@@ -42,11 +79,20 @@ export const startVoiceSession = async (bookId: string): Promise<StartSessionRes
             }
         }
 
+        const book = await Book.findOne({ _id: bookId, clerkId });
+
+        if (!book) {
+            return {
+                success: false,
+                error: "Book not found or unauthorized",
+            };
+        }
+
         const session = await VoiceSession.create({
-            clerkId: userId,
+            clerkId,
             bookId,
             startedAt: new Date(),
-            billingPeriodStart: getCurrentBillingPeriodStart(),
+            billingPeriodStart,
             durationSeconds: 0,
         });
 
@@ -56,6 +102,13 @@ export const startVoiceSession = async (bookId: string): Promise<StartSessionRes
             maxDurationMinutes: limits.maxSessionMinutes,
         };
     } catch (error) {
+        if (didReserveSession && clerkId && billingPeriodStart) {
+            await VoiceSessionReservation.findOneAndUpdate(
+                { clerkId, billingPeriodStart, reservationCount: { $gt: 0 } },
+                { $inc: { reservationCount: -1 } },
+            );
+        }
+
         console.error("Error starting voice session", error);
         return {
             success: false,
@@ -72,10 +125,30 @@ export const endVoiceSession = async (sessionId: string, durationSeconds: number
             return { success: false, error: "Unauthorized" };
         }
 
+        if (
+            typeof durationSeconds !== "number"
+            || Number.isNaN(durationSeconds)
+            || !Number.isFinite(durationSeconds)
+            || durationSeconds < 0
+            || !Number.isInteger(durationSeconds)
+        ) {
+            return {
+                success: false,
+                error: "Invalid durationSeconds",
+            };
+        }
+
         await connectToDatabase();
 
         const session = await VoiceSession.findOneAndUpdate(
-            { _id: sessionId, clerkId: userId },
+            {
+                _id: sessionId,
+                clerkId: userId,
+                $or: [
+                    { endedAt: { $exists: false } },
+                    { endedAt: null },
+                ],
+            },
             {
                 endedAt: new Date(),
                 durationSeconds,
@@ -84,7 +157,7 @@ export const endVoiceSession = async (sessionId: string, durationSeconds: number
         );
 
         if (!session) {
-            return { success: false, error: "Session not found" };
+            return { success: false, error: "Session not found or already closed" };
         }
 
         return {

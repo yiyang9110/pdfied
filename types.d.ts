@@ -49,6 +49,15 @@ export interface IVoiceSession extends Document {
   updatedAt: Date;
 }
 
+export interface IVoiceSessionReservation extends Document {
+  clerkId: string;
+  billingPeriodStart: Date;
+  reservationCount: number;
+  lastReservationToken?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ============================================
 // FORM & INPUT TYPES
 // ============================================

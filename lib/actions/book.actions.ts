@@ -190,7 +190,7 @@ export const saveBookSegments = async (
 
     await BookSegment.insertMany(segmentsToInsert);
 
-    const updatedBook = await Book.findByIdAndUpdate(
+    const updatedBook = await Book.findOneAndUpdate(
       { _id: bookId, clerkId: userId },
       { totalSegments: segments.length },
     );
