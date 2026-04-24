@@ -165,9 +165,9 @@ export const saveBookSegments = async (
   bookId: string,
   segments: TextSegment[],
 ) => {
-  try {
-    const { userId } = await auth();
+  const { userId } = await auth();
 
+  try {
     if (!userId) {
       return {
         success: false,
