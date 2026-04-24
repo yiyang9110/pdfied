@@ -117,6 +117,7 @@ export const createBook = async (data: CreateBook) => {
     }
 
     const db = await connectToDatabase();
+    if (!db) throw new Error("Database connection failed");
 
     const slug = generateSlug(data.title);
     const { plan, limits } = await getUserPlanContext();
